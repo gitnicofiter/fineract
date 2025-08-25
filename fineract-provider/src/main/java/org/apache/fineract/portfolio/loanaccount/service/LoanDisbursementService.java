@@ -43,6 +43,7 @@ import org.apache.fineract.infrastructure.core.serialization.JsonParserHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.charge.domain.Charge;
+import org.apache.fineract.portfolio.charge.domain.ChargeCalculationType;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
@@ -167,7 +168,7 @@ public class LoanDisbursementService {
         return disburseAmount;
     }
 
-    public void handleDisbursementTransaction(final Loan loan, final LocalDate disbursedOn, final PaymentDetail paymentDetail) {
+    public void handleDisbursementTransaction(final Loan loan, final LocalDate disbursedOn, final PaymentDetail paymentDetail, final Money amountToDisburse) {
         // add repayment transaction to track incoming money from client to mfi
         // for (charges due at time of disbursement)
 
@@ -199,13 +200,47 @@ public class LoanDisbursementService {
              * create a Charge applied transaction if Up front Accrual, None or Cash based accounting is enabled
              */
             if (isDisbursementCharge || isTrancheDisbursementCharge) {
-                if (totalFeeChargesDueAtDisbursement.isGreaterThanZero() && !charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
-                    charge.markAsFullyPaid();
-                    // Add "Loan Charge Paid By" details to this transaction
-                    final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(chargesPayment, charge, charge.amount(),
-                            installmentNumber);
-                    chargesPayment.getLoanChargesPaid().add(loanChargePaidBy);
-                    disbursentMoney = disbursentMoney.plus(charge.amount());
+                if (!charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
+
+                    Money chargeAmountToPay = Money.zero(loan.getCurrency());
+
+                    if (isDisbursementCharge) {
+
+                        /* this want say the charge of disbursement is % amount*/
+                        if (ChargeCalculationType.PERCENT_OF_AMOUNT.getValue().equals(charge.getCharge().getChargeCalculation())) {
+                            chargeAmountToPay = amountToDisburse.multipliedBy(charge.getPercentage().divide(new BigDecimal(100)));
+                        } else {
+                            chargeAmountToPay = charge.getAmountOutstanding(loan.getCurrency());
+                        }
+
+                        if (chargeAmountToPay.isGreaterThanZero()) {
+                            final LoanTransaction chargePaymentDisburse = LoanTransaction.repaymentAtDisbursement(
+                              loan.getOffice(), chargeAmountToPay, paymentDetail, disbursedOn, null);
+
+                            final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(
+                                    chargePaymentDisburse, charge, chargeAmountToPay.getAmount(), installmentNumber
+                            );
+
+                            chargePaymentDisburse.getLoanChargesPaid().add(loanChargePaidBy);
+                            charge.markPartPaid(chargeAmountToPay.getAmount());
+                            chargePaymentDisburse.updateLoan(loan);
+                            loan.addLoanTransaction(chargePaymentDisburse);
+                        } else {
+                            charge.markAsFullyPaid();
+                        }
+
+
+                    } else {
+                        charge.markAsFullyPaid();
+                        // Add "Loan Charge Paid By" details to this transaction
+                        final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(chargesPayment, charge, charge.amount(),
+                                installmentNumber);
+                        chargesPayment.getLoanChargesPaid().add(loanChargePaidBy);
+                        disbursentMoney = disbursentMoney.plus(charge.amount());
+                    }
+
+
+
                 }
             } else if (disbursedOn.equals(loan.getActualDisbursementDate())
                     && loan.isNoneOrCashOrUpfrontAccrualAccountingEnabledOnLoanProduct()) {

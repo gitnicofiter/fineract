@@ -149,6 +149,12 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         this.paid = true;
     }
 
+    public void markPartPaid(BigDecimal amountX) {
+        this.amountPaid = this.amountPaid != null ? this.amountPaid.add(amountX) : amountX;
+        this.amountOutstanding = this.amount.subtract(this.amountPaid);
+        this.paid = this.amountOutstanding.compareTo(BigDecimal.ZERO) == 0;
+    }
+
     public boolean isFullyPaid() {
         return this.paid;
     }
