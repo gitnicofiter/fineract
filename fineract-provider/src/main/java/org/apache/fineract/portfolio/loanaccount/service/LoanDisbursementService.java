@@ -190,7 +190,7 @@ public class LoanDisbursementService {
             LocalDate actualDisbursementDate = loan.getActualDisbursementDate(charge);
 
             boolean isDisbursementCharge = charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
-                    && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid();
+                     && !charge.isWaived() && !charge.isFullyPaid();
 
             boolean isTrancheDisbursementCharge = charge.getCharge().getChargeTimeType()
                     .equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue()) && disbursedOn.equals(actualDisbursementDate)
